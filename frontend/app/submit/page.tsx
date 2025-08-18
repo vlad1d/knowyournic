@@ -63,8 +63,8 @@
   export default function SubmitHotspotPage() {
     const [formData, setFormData] = useState<FormData>(initialFormData)
     const [currentStep, setCurrentStep] = useState(1)
-    const [isSubmitting, setIsSubmitting] = useState(false)
-    const [isSubmitted, setIsSubmitted] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
+    const [submissionSuccess, setSubmissionSuccess] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     const totalSteps = 2
@@ -73,13 +73,22 @@
       setFormData((prev) => ({ ...prev, location }))
     }
 
+    const resetFormData  = () => {
+      console.log("Resetting form…");
+      setFormData(initialFormData)
+      setCurrentStep(1)
+      setError(null)
+      setSubmissionSuccess(false)
+      setIsLoading(false)
+    }
+
     const handleSubmit = async () => {
       if (!validateFormData(formData)) {
         setError("Please fill out all required fields correctly.")
         return
       }
 
-      setIsSubmitting(true)
+      setIsLoading(true)
       setError(null)
 
       try {
@@ -116,10 +125,12 @@
             throw new Error(`Failed to submit hotspot data to the server.`)
         }
 
-        setIsSubmitting(true)
+        setSubmissionSuccess(true)
       } catch (error: any) {
         setError(`Error submitting hotspot: ${error.message}`)
-        setIsSubmitted(false)
+        resetFormData()
+      } finally {
+        setIsLoading(false)
       }
     }
 
@@ -136,7 +147,7 @@
       }
     }
 
-    if (isSubmitted) {
+    if (submissionSuccess) {
       return (
         <main className="bg-neutral-950 text-white min-h-screen flex items-center justify-center">
           <div className="px-4 py-8 w-full">
@@ -155,11 +166,11 @@
                     <Link href="/map">Browse Wi-Fi Spots</Link>
                   </Button>
                   <Button
-                    asChild
                     variant="outline"
                     className="w-full rounded-full bg-white/5 border-white/20 hover:bg-white/10"
+                    onClick={resetFormData}
                   >
-                    <Link href="/submit">Submit Another</Link>
+                    Submit Another
                   </Button>
                 </div>
               </RevealOnView>
@@ -466,7 +477,7 @@
                   <Button
                     onClick={handleSubmit}
                     disabled={
-                      isSubmitting ||
+                      isLoading ||
                       !formData.location ||
                       !formData.wifiName ||
                       !formData.submitterInfo.name ||
@@ -474,7 +485,7 @@
                     }
                     className="rounded-full"
                   >
-                    {isSubmitting ? "Submitting..." : "Submit Hotspot"}
+                    {isLoading ? "Submitting..." : "Submit Hotspot"}
                   </Button>
                   )}
                 </div>
