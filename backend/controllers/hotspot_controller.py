@@ -1,10 +1,40 @@
+import math
 from flask import Blueprint, jsonify, request
 from db import db
+from sqlalchemy import and_
 from models.hotspot import Hotspot
 from models.location import Location
 from models.speedTest import SpeedTest
 
 hotspots_bp = Blueprint("hotspots_bp", __name__)
+
+def _haversine_m(lat1, lon1, lat2, lon2):
+    R = 6371000.0  # meters
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dlmb/2)**2
+    return 2 * R * math.asin(math.sqrt(a))
+  
+def get_place(lat, lng, radius_m: float = 25.0) -> Location | None:
+  if lat is None or lng is None:
+    return None
+
+  total_deg = radius_m / 111320.0
+  
+  places = (
+    Location.query.filter(
+      and_( Location.lat >= lat - total_deg, Location.lat <= lat + total_deg),
+      and_ ( Location.lng >= lng - total_deg, Location.lng <= lng + total_deg)
+    )
+    .all()
+  )
+  
+  for place in places:
+    if place.lat is not None and place.lng is not None:
+      if _haversine_m(lat, lng, place.lat, place.lng) <= radius_m:
+        return place
+  return None
 
 def serialize_hotspot(hotspot: Hotspot, location: Location | None = None):
   latest = (
@@ -51,6 +81,7 @@ def get_hotspots():
 # ---------------------------------------- POST /hotspots ----------------------------------------
 @hotspots_bp.route("", methods=["POST"])
 def create_hotspot():
+  # print("Creating a new hotspot...")
   data = request.get_json(silent = True) or {}
   loc = data.get("location") or {}
   coords = loc.get("coordinates") or {}
@@ -62,14 +93,15 @@ def create_hotspot():
   
   missing = [field for field in required if field not in data]
   if missing:
+    db.session.rollback()
     return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
   
   try:
     # Log the location
-    place = Location.query.filter_by(externalId=loc.get("externalId")).first()
+    place = get_place(coords.get("lat"), coords.get("lng"))
+
     if not place:
       place = Location(
-        externalId = loc["id"],
         name = loc["name"],
         address = loc["address"],
         type = loc.get("type"),
@@ -78,7 +110,9 @@ def create_hotspot():
       )
       db.session.add(place)
       db.session.flush()  # Ensure the place is saved to get its ID
-  
+
+    # print("Location found or created:", place.to_dict())
+    
     # Now log the hotspot
     hotspot = Hotspot.query.filter_by(
       locationId=place.id,
@@ -99,15 +133,18 @@ def create_hotspot():
       db.session.add(hotspot)
       db.session.flush()
     else:
+      db.session.rollback()
+      print(f"Hotspot already exists.")
       return jsonify({"error": "Hotspot already exists at this location with the same WiFi name."}), 400
+
+    # print("Hotspot found or created:", hotspot.to_dict())
     
     # Do not log the speed test. This is not provided by the user in the form.
-    
     db.session.commit()
     
     # Return the appropriate response
     print(f'At location {place.to_dict()} created hotspot {hotspot.to_dict()}')
-    
+
     return jsonify({
       "message": "Hotspot created successfully.",
       "location": place.to_dict(),
