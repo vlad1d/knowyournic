@@ -53,8 +53,10 @@ export default function Navigation() {
             {/* Submit Hotspot Button */}
             <div className="flex items-center gap-2">
               <Button size="sm" className="rounded-full">
-                <Plus className="h-4 w-4 mr-1" />
-                <span className="hidden sm:inline">Submit Hotspot</span>
+                <Link href = "/submit" className="flex items-center">
+                  <Plus className="h-4 w-4 mr-1" />
+                  <span className="hidden sm:inline">Submit Hotspot</span>
+                </Link>
               </Button>
             </div>
           </div>

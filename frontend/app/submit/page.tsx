@@ -10,6 +10,8 @@ import DotGridShader from "@/components/DotGridShader"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 
+const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_API_BASE;
+
 type LocationResult = {
   id: string
   name: string
@@ -54,11 +56,16 @@ const initialFormData: FormData = {
   },
 }
 
+const validateFormData = (data: FormData) => {
+  return true; // Add validation logic as needed
+}
+
 export default function SubmitHotspotPage() {
   const [formData, setFormData] = useState<FormData>(initialFormData)
   const [currentStep, setCurrentStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const totalSteps = 2
 
@@ -67,11 +74,54 @@ export default function SubmitHotspotPage() {
   }
 
   const handleSubmit = async () => {
+    if (!validateFormData(formData)) {
+      setError("Please fill out all required fields correctly.")
+      return
+    }
+
     setIsSubmitting(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    setIsSubmitting(false)
-    setIsSubmitted(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`${BACKEND_API_BASE}/api/hotspots`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          location: {
+            id: formData.location!.id,
+            name: formData.location!.name,
+            address: formData.location!.address,
+            type: formData.location!.type,
+            coordinates: formData.location!.coordinates,
+          },
+          wifiName: formData.wifiName,
+          wifiPassword: formData.wifiPassword,
+          category: formData.category,
+          description: formData.description,
+          speedTest: {
+            download: formData.speedTest.download,
+            upload: formData.speedTest.upload,
+            ping: formData.speedTest.ping,
+          },
+          submitterInfo: {
+            name: formData.submitterInfo.name,
+            email: formData.submitterInfo.email,
+            relationship: formData.submitterInfo.relationship,
+          }
+				}),
+			})
+			
+			if (!response.ok) {
+					throw new Error(`Failed to submit hotspot data to the server.`)
+			}
+
+			setIsSubmitting(true)
+		} catch (error: any) {
+			setError(`Error submitting hotspot: ${error.message}`)
+			setIsSubmitted(false)
+		}
   }
 
   const getCategoryColor = (cat: string) => {
@@ -396,7 +446,7 @@ export default function SubmitHotspotPage() {
                     disabled={
                       isSubmitting ||
                       !formData.location ||
-                      !formData.wifiName ||
+                      // !formData.wifiName || to change!!
                       !formData.submitterInfo.name ||
                       !formData.submitterInfo.email
                     }
