@@ -9,6 +9,8 @@ import RevealOnView from "@/components/reveal-on-view"
 import WiFiCard from "@/components/wifi-card"
 import { cn } from "@/lib/utils"
 
+const BACKEND_API_BASE = process.env.NEXT_PUBLIC_BACKEND_API_BASE
+
 const mockResults = [
   {
     id: "starbucks-union-sq",
@@ -21,31 +23,7 @@ const mockResults = [
     isOpen: true,
     amenities: ["Outlets", "Seating", "Coffee"],
     rating: 4.2,
-  },
-  {
-    id: "sf-public-library",
-    name: "SF Public Library Main",
-    address: "100 Larkin St, San Francisco, CA",
-    category: "municipal" as const,
-    distance: "0.5 miles",
-    speed: "78 Mbps",
-    hours: "9:00 AM - 8:00 PM",
-    isOpen: true,
-    amenities: ["Free", "Quiet", "Accessible", "Outlets"],
-    rating: 4.7,
-  },
-  {
-    id: "blue-bottle-coffee",
-    name: "Blue Bottle Coffee",
-    address: "66 Mint St, San Francisco, CA",
-    category: "customer" as const,
-    distance: "0.8 miles",
-    speed: "52 Mbps",
-    hours: "6:00 AM - 7:00 PM",
-    isOpen: true,
-    amenities: ["Coffee", "Outlets", "Quiet"],
-    rating: 4.5,
-  },
+  }
 ]
 
 export default function SearchResultsPage() {
@@ -53,13 +31,40 @@ export default function SearchResultsPage() {
   const [query, setQuery] = useState("")
   const [sortBy, setSortBy] = useState("closest")
   const [selectedFilters, setSelectedFilters] = useState<string[]>([])
+  const [results, setResults] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const q = searchParams.get("q")
-    if (q) {
-      setQuery(q)
-    }
-  }, [searchParams])
+    setLoading(true)
+    setError(null)
+
+    fetch(`${BACKEND_API_BASE}/api/hotspots`, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to fetch results")
+        return response.json()
+      })
+      .then((data) => {
+        const mapped = data.map((h: any) => ({
+          id: h.id,
+          name: h.wifiName || "Unnamed Wi-Fi",
+          address: h.location?.address || "Unknown address",
+          category: h.category || "open",
+          speed: h.latestSpeedTest?.download != null ? `${h.latestSpeedTest.download} Mbps` : undefined,
+          hours: undefined,           // default to change!!
+          isOpen: true,               // default
+          amenities: [],              // default
+          rating: 0,                  // default
+          _raw: h,
+        }));
+        setResults(mapped)
+      })
+      .catch((err) => {
+        console.error(err)
+        setError("Failed to load results")
+      })
+      .finally(() => setLoading(false))
+  }, [])
 
   const sortOptions = [
     { value: "closest", label: "Closest" },
@@ -78,6 +83,33 @@ export default function SearchResultsPage() {
   const toggleFilter = (filterId: string) => {
     setSelectedFilters((prev) => (prev.includes(filterId) ? prev.filter((id) => id !== filterId) : [...prev, filterId]))
   }
+
+  const filtered = results.filter((result) => {
+    if (!query) return true
+    const q = query.toLowerCase()
+    const name = (result.name || "").toLowerCase()
+    const address = (result.address || "").toLowerCase()
+    return name.includes(q) || address.includes(q)
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "name": 
+        return a.name.localeCompare(b.name)
+      case "speed": {
+        const sa = parseFloat((a.speed || "").toString()) || 0
+        const sb = parseFloat((b.speed || "").toString()) || 0
+        return sb - sa
+      }
+      case "rating": {
+        const ra = a.rating || 0
+        const rb = b.rating || 0
+        return rb - ra
+      } // to change!! sort by distance too
+      default:
+        return 0
+    }
+  })
 
   return (
     <main className="bg-neutral-950 text-white min-h-screen">
@@ -105,7 +137,7 @@ export default function SearchResultsPage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-2">{query ? `Wi-Fi near "${query}"` : "Search Results"}</h1>
-                <p className="text-white/70">{mockResults.length} locations found</p>
+                <p className="text-white/70">{sorted.length} locations found</p>
               </div>
             </div>
           </RevealOnView>
@@ -196,7 +228,7 @@ export default function SearchResultsPage() {
             {/* Results List */}
             <div className="lg:col-span-2">
               <div className="space-y-4">
-                {mockResults.map((result, idx) => (
+                {sorted.map((result, idx) => (
                   <WiFiCard key={result.id} {...result} revealDelay={idx * 0.05} />
                 ))}
               </div>
@@ -218,21 +250,21 @@ export default function SearchResultsPage() {
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
                       <span className="text-white/70">Total results:</span>
-                      <span className="font-medium">{mockResults.length}</span>
+                      <span className="font-medium">{sorted.length}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-white/70">Open now:</span>
-                      <span className="font-medium text-green-400">{mockResults.filter((r) => r.isOpen).length}</span>
+                      <span className="font-medium text-green-400">{sorted.filter((r) => r.isOpen).length}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-white/70">Average rating:</span>
                       <span className="font-medium">
-                        {(mockResults.reduce((acc, r) => acc + (r.rating || 0), 0) / mockResults.length).toFixed(1)}
+                        {sorted.length ? (sorted.reduce((acc, r) => acc + (r.rating || 0), 0) / sorted.length).toFixed(1) : "0.0"}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-white/70">Within 1 mile:</span>
-                      <span className="font-medium">{mockResults.length}</span>
+                      <span className="font-medium">{sorted.length}</span>
                     </div>
                   </div>
                 </div>

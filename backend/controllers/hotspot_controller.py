@@ -6,14 +6,17 @@ from models.speedTest import SpeedTest
 
 hotspots_bp = Blueprint("hotspots_bp", __name__)
 
-def get_latest_speed_test(hotspot: Hotspot):
+def serialize_hotspot(hotspot: Hotspot, location: Location | None = None):
   latest = (
     SpeedTest.query
     .filter_by(hotspotId=hotspot.id)
     .order_by(SpeedTest.createdAt.desc())
     .first()
   )
+  # Avoid an extra query if caller already has the Location
+  loc = location or Location.query.get(hotspot.locationId)
   data = hotspot.to_dict()
+  data["location"] = loc.to_dict() if loc else None
   data["latestSpeedTest"] = latest.to_dict() if latest else None
   return data
 
@@ -36,15 +39,13 @@ def get_hotspots():
     
     hotspots = Hotspot.query.filter_by(locationId=location.id).all()
     
-    # For each hotspot, get the latest speed test result
-    out = location.to_dict()
-    out["hotspots"] = [get_latest_speed_test(hotspot) for hotspot in hotspots]
-    return jsonify(out), 200
+    # For each hotspot, get the latest speed test result and attach known location
+    return jsonify([serialize_hotspot(hotspot, location) for hotspot in hotspots]), 200
   
   # Otherwise, return all hotspots
   limit = request.args.get("limit", default=100, type=int)
   hotspots = Hotspot.query.limit(limit).all()
-  return jsonify([get_latest_speed_test(hotspot) for hotspot in hotspots]), 200
+  return jsonify([serialize_hotspot(hotspot) for hotspot in hotspots]), 200
 
   
 # ---------------------------------------- POST /hotspots ----------------------------------------
@@ -53,7 +54,6 @@ def create_hotspot():
   data = request.get_json(silent = True) or {}
   loc = data.get("location") or {}
   coords = loc.get("coordinates") or {}
-  speed = data.get("speedTest") or {}
   submitter = data.get("submitterInfo") or {}
   
   required = [
@@ -101,28 +101,17 @@ def create_hotspot():
     else:
       return jsonify({"error": "Hotspot already exists at this location with the same WiFi name."}), 400
     
-    # Finally, log the speed test
-    if not speed: # to change!!: this is only debug values
-      speed = {"download": 50.0, "upload": 10.0, "ping": 20.0}
+    # Do not log the speed test. This is not provided by the user in the form.
     
-    speedTest = SpeedTest(
-      hotspotId = hotspot.id,
-      download = to_float(speed.get("download")),
-      upload = to_float(speed.get("upload")),
-      ping = to_float(speed.get("ping"))
-    )
-    
-    db.session.add(speedTest)
     db.session.commit()
     
     # Return the appropriate response
-    print(f'At location {place.to_dict()} created hotspot {hotspot.to_dict()} with speed test {speedTest.to_dict()}')
+    print(f'At location {place.to_dict()} created hotspot {hotspot.to_dict()}')
     
     return jsonify({
       "message": "Hotspot created successfully.",
       "location": place.to_dict(),
-      "hotspot": hotspot.to_dict(),
-      "speedTest": speedTest.to_dict()
+      "hotspot": hotspot.to_dict()
     }), 201
   except Exception as e:
     db.session.rollback()
